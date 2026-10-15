@@ -1,0 +1,116 @@
+# Enmax dashboard — paste into: Settings > Dashboards > Add dashboard > New from scratch
+# > open it > ⋮ > Edit dashboard > ⋮ > Raw configuration editor  (replace everything)
+title: Enmax Bill
+views:
+  - title: Bill
+    path: bill
+    icon: mdi:receipt-text
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Account
+          - type: tile
+            entity: sensor.enmax_amount_due
+          - type: tile
+            entity: sensor.enmax_due_date
+          - type: tile
+            entity: sensor.enmax_current_balance
+          - type: tile
+            entity: sensor.enmax_last_bill_amount
+          - type: tile
+            entity: sensor.enmax_last_payment
+          - type: tile
+            entity: sensor.enmax_last_payment_date
+          - type: entities
+            title: Plans
+            entities:
+              - sensor.enmax_electricity_plan
+              - sensor.enmax_gas_plan
+      - type: grid
+        cards:
+          - type: heading
+            heading: Latest bill
+          - type: entities
+            title: Energy
+            entities:
+              - entity: sensor.enmax_bill_electricity_usage
+                name: Electricity used
+              - entity: sensor.enmax_bill_electricity
+                name: Electricity
+              - entity: sensor.enmax_bill_gas_usage
+                name: Gas used
+              - entity: sensor.enmax_bill_gas
+                name: Gas
+          - type: entities
+            title: City of Calgary
+            entities:
+              - entity: sensor.enmax_bill_water_usage
+                name: Water used
+              - entity: sensor.enmax_bill_water
+                name: Water
+              - entity: sensor.enmax_bill_wastewater
+                name: Wastewater
+              - entity: sensor.enmax_bill_stormwater
+                name: Stormwater
+              - entity: sensor.enmax_bill_black_cart_garbage
+                name: Black cart (garbage)
+              - entity: sensor.enmax_bill_blue_cart_recycling
+                name: Blue cart (recycling)
+              - entity: sensor.enmax_bill_green_cart_compost
+                name: Green cart (compost)
+              - entity: sensor.enmax_bill_residential_waste_fee
+                name: Residential waste fee
+              - entity: sensor.enmax_bill_municipal_service_charge
+                name: Service charge
+              - entity: sensor.enmax_bill_city_of_calgary_total
+                name: City total
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Monthly history
+          - type: statistics-graph
+            title: Monthly cost by service
+            chart_type: bar
+            period: month
+            days_to_show: 730
+            stat_types: [change]
+            entities:
+              - entity: enmax:ACCOUNT_NO_electricity_cost
+                name: Electricity
+              - entity: enmax:ACCOUNT_NO_gas_cost
+                name: Gas
+              - entity: enmax:ACCOUNT_NO_water_cost
+                name: Water + wastewater + storm
+              - entity: enmax:ACCOUNT_NO_waste_cost
+                name: Waste & recycling
+          - type: statistics-graph
+            title: Electricity (kWh)
+            chart_type: bar
+            period: month
+            days_to_show: 730
+            stat_types: [change]
+            entities:
+              - entity: enmax:ACCOUNT_NO_electricity_consumption
+                name: Electricity
+          - type: statistics-graph
+            title: Gas (GJ)
+            chart_type: bar
+            period: month
+            days_to_show: 730
+            stat_types: [change]
+            entities:
+              - entity: enmax:ACCOUNT_NO_gas_consumption
+                name: Gas
+          - type: statistics-graph
+            title: Water (m³)
+            chart_type: bar
+            period: month
+            days_to_show: 730
+            stat_types: [change]
+            entities:
+              - entity: enmax:ACCOUNT_NO_water_consumption
+                name: Water

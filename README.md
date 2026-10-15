@@ -34,7 +34,16 @@ Copy `custom_components/enmax` into your Home Assistant `config/custom_component
 ## Set up
 1. **Settings → Devices & services → Add integration → Enmax (Calgary)**.
 2. Sign in with your MyAccount email and password.
-3. Wait a minute or two. The first import asks Enmax for **all** the history it has. If Enmax refuses, it falls back to the last 2 years. The log shows `Enmax full import: N bills from … to …`.
+3. Wait a minute or two while the first import loads the 24 bills (about 2 years) that Enmax provides.
+
+### Keeping older history from the built-in Opower/Enmax integration
+Enmax's API only returns the latest **24 bills**. If you used the built-in **Opower (Enmax)** integration before, its statistics still hold your older electricity and gas history. On the first import, this integration:
+
+- copies the Opower electricity and gas data from **before** the first Enmax bill into the Enmax statistics, so the overlap months are counted only once;
+- converts Opower's gas (labelled CCF) to GJ, using the months both sources cover to work out the factor;
+- keeps that history afterwards, even if you remove Opower.
+
+Once merged, remove the Opower entries from the Energy dashboard and use only the Enmax ones. Don't delete Opower's statistics until the merge has run. The log shows `merged N points of old history`.
 
 ### Energy dashboard
 **Settings → Dashboards → Energy**:

@@ -18,6 +18,8 @@ from homeassistant.components.recorder.models import StatisticData, StatisticMet
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    list_statistic_ids,
+    statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, UnitOfEnergy, UnitOfVolume
@@ -34,7 +36,6 @@ from .const import (
     CONF_BP,
     CONF_STATS_VERSION,
     DOMAIN,
-    FULL_HISTORY_START,
     HISTORY_DAYS,
     STATS_VERSION,
     UPDATE_INTERVAL,
@@ -101,6 +102,14 @@ def _period(
     return (start, end) if end >= start else None
 
 
+# Old Opower (Enmax) statistic ids look like opower:enmx_elec_<id>_energy_consumption
+LEGACY_MATCH: dict[str, tuple[str, str]] = {
+    "electricity_consumption": ("_elec_", "_consumption"),
+    "electricity_cost": ("_elec_", "_cost"),
+    "gas_consumption": ("_gas_", "_consumption"),
+    "gas_cost": ("_gas_", "_cost"),
+}
+
 SERIES: dict[str, dict[str, Any]] = {
     "electricity_consumption": {
         "name": "Electricity consumption", "unit": UnitOfEnergy.KILO_WATT_HOUR, "unit_class": EnergyConverter.UNIT_CLASS,
@@ -160,19 +169,10 @@ class EnmaxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 accts = await self.client.associated_accounts()
                 self.bp = next((a.get("bp_id") for a in accts if a["account_no"] == self.account_no), None)
             full = self.config_entry.data.get(CONF_STATS_VERSION) != STATS_VERSION
-            insights = None
-            if full:
-                # First run (or after an upgrade): ask for everything Enmax has.
-                try:
-                    insights = await self.client.energy_insights(self.account_no, FULL_HISTORY_START, date.today())
-                except EnmaxAuthError:
-                    raise
-                except EnmaxError as err:
-                    _LOGGER.warning("Enmax refused full history (%s); using last %s days", err, HISTORY_DAYS)
-            if not insights:
-                insights = await self.client.energy_insights(
-                    self.account_no, date.today() - timedelta(days=HISTORY_DAYS), date.today()
-                )
+            # Enmax only returns the latest 24 bills (older start dates give HTTP 400)
+            insights = await self.client.energy_insights(
+                self.account_no, date.today() - timedelta(days=HISTORY_DAYS), date.today()
+            )
             balance = await self.client.balance(self.account_no, self.bp) if self.bp else {}
             invoices = await self.client.invoices(self.account_no)
             plans = await self.client.plans(self.account_no)
@@ -233,16 +233,24 @@ class EnmaxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
 
             running, last_ts = 0.0, None
-            last = {} if full else await get_instance(self.hass).async_add_executor_job(
-                get_last_statistics, self.hass, 1, sid, True, {"sum"}
-            )
-            if last.get(sid):
-                running = float(last[sid][0].get("sum") or 0.0)
-                last_ts = last[sid][0]["start"]
-                if isinstance(last_ts, datetime):
-                    last_ts = last_ts.timestamp()
-
             stats: list[StatisticData] = []
+            first_day = min(daily)
+            first_dt = datetime(first_day.year, first_day.month, first_day.day, tzinfo=tz)
+
+            if full:
+                # keep history from before Enmax's 24-bill window: our own earlier
+                # points if we have them, otherwise the old Opower statistics
+                for start_dt, delta in await self._legacy_history(key, sid, first_dt, daily, tz):
+                    running += delta
+                    stats.append(StatisticData(start=start_dt, state=round(delta, 4), sum=round(running, 4)))
+            else:
+                last = await get_instance(self.hass).async_add_executor_job(
+                    get_last_statistics, self.hass, 1, sid, True, {"sum"}
+                )
+                if last.get(sid):
+                    running = float(last[sid][0].get("sum") or 0.0)
+                    last_ts = _ts(last[sid][0]["start"])
+
             for day in sorted(daily):
                 start_dt = datetime(day.year, day.month, day.day, tzinfo=tz)
                 if last_ts is not None and start_dt.timestamp() <= last_ts:
@@ -263,3 +271,79 @@ class EnmaxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             _LOGGER.debug("Adding %s statistics for %s", len(stats), sid)
             async_add_external_statistics(self.hass, meta, stats)
+
+    # ------------------------------------------------------------ legacy history
+    async def _rows(self, sid: str, start: datetime, end: datetime | None) -> list[tuple[float, float]]:
+        """(start_ts, delta) for every stored hour of a statistic, oldest first."""
+        res = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period, self.hass, start, end, {sid}, "hour", None, {"sum"}
+        )
+        out, prev = [], 0.0
+        for row in res.get(sid, []):
+            total = row.get("sum")
+            if total is None:
+                continue
+            out.append((_ts(row["start"]), float(total) - prev))
+            prev = float(total)
+        return out
+
+    async def _legacy_history(
+        self, key: str, sid: str, first_dt: datetime, daily: dict[date, float], tz
+    ) -> list[tuple[datetime, float]]:
+        epoch = datetime(2000, 1, 1, tzinfo=tz)
+
+        # 1) our own points from before the Enmax window (already merged earlier)
+        own = [(t, d) for t, d in await self._rows(sid, epoch, None) if t < first_dt.timestamp()]
+        if own:
+            _LOGGER.info("%s: keeping %s earlier points already in Home Assistant", sid, len(own))
+            return [(datetime.fromtimestamp(t, tz), d) for t, d in own]
+
+        # 2) old Opower statistics
+        if key not in LEGACY_MATCH:
+            return []
+        kind, suffix = LEGACY_MATCH[key]
+        ids = await get_instance(self.hass).async_add_executor_job(
+            list_statistic_ids, self.hass, None, "sum"
+        )
+        legacy = [
+            i["statistic_id"] for i in ids
+            if i.get("source") == "opower" and "enmx" in i["statistic_id"]
+            and kind in i["statistic_id"] and i["statistic_id"].endswith(suffix)
+        ]
+        if not legacy:
+            return []
+        if len(legacy) > 1:
+            _LOGGER.warning("%s: several Opower statistics match (%s); using %s", sid, legacy, legacy[0])
+        old = await self._rows(legacy[0], epoch, None)
+        if not old:
+            return []
+
+        # unit check: compare totals over the months both sources cover
+        # Opower rows are per billing period, stamped at the period start. Compare
+        # both sources over [first Opower row inside the Enmax window, last Opower row).
+        factor = 1.0
+        first_ts = first_dt.timestamp()
+        inside = [t for t, _ in old if t >= first_ts]
+        old_overlap = new_overlap = 0.0
+        if len(inside) >= 2:
+            w0, w1 = inside[0], inside[-1]
+            old_overlap = sum(d for t, d in old if w0 <= t < w1)
+            new_overlap = sum(
+                v for day, v in daily.items()
+                if w0 <= datetime(day.year, day.month, day.day, tzinfo=tz).timestamp() < w1
+            )
+        if old_overlap > 0 and new_overlap > 0:
+            ratio = new_overlap / old_overlap
+            if key == "gas_consumption":
+                factor = ratio  # Opower labelled Enmax gas as CCF; Enmax reports GJ
+            _LOGGER.info("%s: Opower→Enmax ratio over overlap = %.4f (factor used %.4f)", sid, ratio, factor)
+        elif key == "gas_consumption":
+            _LOGGER.warning("%s: no overlap with Opower gas; importing it unconverted", sid)
+
+        keep = [(datetime.fromtimestamp(t, tz), d * factor) for t, d in old if t < first_dt.timestamp() and d > 0]
+        _LOGGER.info("%s: merged %s points of old history from %s", sid, len(keep), legacy[0])
+        return keep
+
+
+def _ts(value: Any) -> float:
+    return value.timestamp() if isinstance(value, datetime) else float(value)

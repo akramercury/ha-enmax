@@ -1,3 +1,5 @@
+<p align="center"><img src="images/icon.png" alt="Enmax for Home Assistant" width="128"></p>
+
 # Enmax (Calgary) for Home Assistant
 
 Unofficial Home Assistant integration for **ENMAX MyAccount** in Calgary, Alberta. It brings your whole Enmax bill into Home Assistant: electricity, natural gas, and every City of Calgary charge on it (water, wastewater, stormwater, and black/blue/green cart programs).
@@ -25,7 +27,7 @@ It polls every 6 hours.
 ## Install
 
 ### HACS (custom repository)
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/akramercury//enmax-energy-insights`, category **Integration**.
+1. HACS → ⋮ → **Custom repositories** → add `https://github.com/YOUR_GITHUB_USER/ha-enmax`, category **Integration**.
 2. Install **Enmax (Calgary)**, then restart Home Assistant.
 
 ### Manual

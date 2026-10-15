@@ -25,7 +25,7 @@ It polls every 6 hours.
 ## Install
 
 ### HACS (custom repository)
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/YOUR_GITHUB_USER/ha-enmax`, category **Integration**.
+1. HACS → ⋮ → **Custom repositories** → add `https://github.com/akramercury//enmax-energy-insights`, category **Integration**.
 2. Install **Enmax (Calgary)**, then restart Home Assistant.
 
 ### Manual

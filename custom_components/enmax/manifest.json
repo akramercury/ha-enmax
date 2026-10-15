@@ -6,9 +6,9 @@
   "dependencies": [
     "recorder"
   ],
-  "documentation": "https://github.com/YOUR_GITHUB_USER/ha-enmax",
+  "documentation": "https://github.com/akramercury/ha-enmax",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/YOUR_GITHUB_USER/ha-enmax/issues",
+  "issue_tracker": "https://github.com/akramercury/ha-enmax/issues",
   "requirements": [],
   "version": "0.3.1"
 }
